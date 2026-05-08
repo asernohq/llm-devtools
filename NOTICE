@@ -1,0 +1,28 @@
+Aserno LLM DevTools
+Small, pragmatic tools for LLM-assisted coding workflows.
+
+Copyright (c) 2026-present Aserno ApS
+SPDX-License-Identifier: MIT
+
+This project is maintained by Aserno ApS.
+
+This product includes software developed by Aserno ApS:
+https://github.com/asernohq/llm-devtools
+
+License:
+This project is licensed under the MIT License.
+
+For full copyright and license information, please see the LICENSE file
+distributed with this source code.
+
+Third-party notices:
+This project currently does not bundle third-party source code.
+
+Names and marks:
+Aserno, Aserno LLM DevTools, and related names, logos, and branding are
+trademarks or trade names of Aserno ApS.
+
+CitOmni is a separate framework/project name and may be referenced by this
+repository only to describe compatibility, tooling targets, or developer
+workflow use cases. Such references do not imply ownership of CitOmni by
+Aserno ApS.

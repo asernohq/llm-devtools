@@ -1,0 +1,19 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+/*
+ * This file is part of Aserno LLM DevTools.
+ * Small, pragmatic tools for LLM-assisted coding workflows.
+ *
+ * For more information, visit https://github.com/asernohq/llm-devtools
+ *
+ * Copyright (c) 2026-present Aserno ApS
+ * SPDX-License-Identifier: MIT
+ *
+ * For full copyright and license information,
+ * please see the LICENSE file distributed with this source code.
+ */
+
+require \dirname(__DIR__) . '/vendor/autoload.php';
+
+exit((new \Aserno\LlmDevTools\CitOmni\ContextTool())->run($_SERVER['argv']));

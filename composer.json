@@ -1,0 +1,63 @@
+{
+	"name": "asernohq/llm-devtools",
+	"description": "Small, pragmatic developer tools for LLM-assisted coding workflows.",
+	"type": "project",
+	"license": "MIT",
+	"homepage": "https://github.com/asernohq/llm-devtools",
+	"support": {
+		"issues": "https://github.com/asernohq/llm-devtools/issues",
+		"source": "https://github.com/asernohq/llm-devtools"
+	},
+	"keywords": [
+		"llm",
+		"devtools",
+		"context",
+		"prompt",
+		"php",
+		"cli",
+		"citomni"
+	],
+	"authors": [
+		{
+			"name": "Aserno ApS",
+			"homepage": "https://www.aserno.dk"
+		}
+	],
+	"require": {
+		"php": ">=8.2"
+	},
+	"autoload": {
+		"psr-4": {
+			"Aserno\\LlmDevTools\\": "src/"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"Aserno\\LlmDevTools\\Tests\\": "tests/"
+		}
+	},
+	"bin": [
+		"bin/citomni-context"
+	],
+	"config": {
+		"sort-packages": true,
+		"preferred-install": {
+			"*": "dist"
+		}
+	},
+	"scripts": {
+		"check": [
+			"@composer-validate",
+			"@lint"
+		],
+		"composer-validate": [
+			"composer validate --strict"
+		],
+		"lint": [
+			"php -l src/CitOmni/ContextTool.php",
+			"php -l bin/citomni-context"
+		]
+	},
+	"minimum-stability": "stable",
+	"prefer-stable": true
+}

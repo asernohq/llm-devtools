@@ -1,0 +1,12 @@
+# Local Windows command shims
+*.bat
+
+# Local backups
+*.bck
+
+# Lock files
+*.lock
+
+# Local/private folders prefixed with underscore, anywhere in the repo
+_*/
+**/_*/
