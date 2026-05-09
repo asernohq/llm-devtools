@@ -31,7 +31,10 @@ namespace Aserno\LlmDevTools\CitOmni;
  * - Registry.php is used as lookup input, but is only included in output with --with-registry.
  */
 final class ContextTool {
+
 	private const DEFAULT_ROOT = 'C:\\dev\\www\\citomni';
+	
+	private const USAGE_LOG_PATH = 'C:\\dev\\var\\logs\\context-tool-usage.jsonl';
 
 	private const LAYERS = [
 		'Boot' => ['src/Boot/Registry.php'],
@@ -95,6 +98,9 @@ final class ContextTool {
 
 	/** @var array<string,array<string,string>> */
 	private array $fileMeta = [];
+	
+	/** @var int */
+	private int $startedAtNs = 0;
 
 	/**
 	 * Run the context extractor.
@@ -103,64 +109,98 @@ final class ContextTool {
 	 * @return int Process exit code.
 	 */
 	public function run(array $argv): int {
+		$this->startedAtNs = \hrtime(true);
 		$this->options = $this->parseOptions($argv);
 
-		if ($this->hasFlag('help')) {
-			$this->printHelp();
-			return 0;
-		}
+		$root = '';
+		$files = [];
+		$exitCode = 1;
+		$status = 'unknown';
 
-		$root = $this->normalizePath((string)($this->options['root'] ?? self::DEFAULT_ROOT));
+		try {
+			if ($this->hasFlag('help')) {
+				$this->printHelp();
 
-		if (!\is_dir($root)) {
-			\fwrite(STDERR, "Root path not found: {$root}\n");
-			return 1;
-		}
+				$exitCode = 0;
+				$status = 'help';
 
-		$bundle = (string)($this->options['bundle'] ?? '');
-
-		if ($bundle !== '') {
-			$files = $this->selectBundleFiles($root, $bundle);
-		} else {
-			$packages = $this->resolvePackages($root);
-
-			if ($packages === []) {
-				\fwrite(STDERR, "No matching packages found.\n");
-				return 1;
+				return $exitCode;
 			}
 
-			$classIndex = $this->buildClassIndex($packages);
-			$files = $this->selectFiles($packages, $classIndex);
-		}
+			$root = $this->normalizePath((string)($this->options['root'] ?? self::DEFAULT_ROOT));
 
-		if ($files === []) {
-			\fwrite(STDERR, "No matching files found.\n");
-			return 1;
-		}
+			if (!\is_dir($root)) {
+				\fwrite(STDERR, "Root path not found: {$root}\n");
 
-		if (!isset($this->options['bundle'])) {
-			\sort($files, \SORT_STRING);
-		}
+				$status = 'root_not_found';
 
-		$markdown = $this->renderMarkdown($root, $files);
-		$out = (string)($this->options['out'] ?? '');
-
-		if ($out !== '') {
-			$target = $this->normalizePath($out);
-			$dir = \dirname($target);
-
-			if (!\is_dir($dir)) {
-				\fwrite(STDERR, "Output directory not found: {$dir}\n");
-				return 1;
+				return $exitCode;
 			}
 
-			\file_put_contents($target, $markdown);
-			\fwrite(STDOUT, "Wrote context to {$target}\n");
-			return 0;
-		}
+			$bundle = (string)($this->options['bundle'] ?? '');
 
-		\fwrite(STDOUT, $markdown);
-		return 0;
+			if ($bundle !== '') {
+				$files = $this->selectBundleFiles($root, $bundle);
+			} else {
+				$packages = $this->resolvePackages($root);
+
+				if ($packages === []) {
+					\fwrite(STDERR, "No matching packages found.\n");
+
+					$status = 'no_matching_packages';
+
+					return $exitCode;
+				}
+
+				$classIndex = $this->buildClassIndex($packages);
+				$files = $this->selectFiles($packages, $classIndex);
+			}
+
+			if ($files === []) {
+				\fwrite(STDERR, "No matching files found.\n");
+
+				$status = 'no_matching_files';
+
+				return $exitCode;
+			}
+
+			if (!isset($this->options['bundle'])) {
+				\sort($files, \SORT_STRING);
+			}
+
+			$markdown = $this->renderMarkdown($root, $files);
+			$out = (string)($this->options['out'] ?? '');
+
+			if ($out !== '') {
+				$target = $this->normalizePath($out);
+				$dir = \dirname($target);
+
+				if (!\is_dir($dir)) {
+					\fwrite(STDERR, "Output directory not found: {$dir}\n");
+
+					$status = 'output_directory_not_found';
+
+					return $exitCode;
+				}
+
+				\file_put_contents($target, $markdown);
+				\fwrite(STDOUT, "Wrote context to {$target}\n");
+
+				$exitCode = 0;
+				$status = 'wrote_file';
+
+				return $exitCode;
+			}
+
+			\fwrite(STDOUT, $markdown);
+
+			$exitCode = 0;
+			$status = 'wrote_stdout';
+
+			return $exitCode;
+		} finally {
+			$this->writeUsageLog($root, $files, $exitCode, $status);
+		}
 	}
 
 	/**
@@ -1689,6 +1729,114 @@ final class ContextTool {
 	}
 
 	/**
+	 * Write one usage event as JSON Lines.
+	 *
+	 * Behavior:
+	 * - Never writes to STDOUT.
+	 * - Never fails the context extraction when logging fails.
+	 * - Avoids logging generated source context.
+	 *
+	 * @param string $root Resolved packages root.
+	 * @param array<int,string> $files Selected files.
+	 * @param int $exitCode Process exit code.
+	 * @param string $status Short machine-readable status.
+	 * @return void
+	 */
+	private function writeUsageLog(string $root, array $files, int $exitCode, string $status): void {
+		$path = $this->resolveUsageLogPath();
+
+		if ($path === '') {
+			return;
+		}
+
+		$entry = [
+			'ts' => \date('c'),
+			'status' => $status,
+			'exit_code' => $exitCode,
+			'duration_ms' => (int)((\hrtime(true) - $this->startedAtNs) / 1000000),
+			'root' => $root,
+			'selectors' => $this->buildUsageSelectorLog(),
+			'view' => $this->resolveView(),
+			'visibility' => $this->resolveVisibility($this->resolveView()),
+			'doc' => $this->resolveDocMode($this->resolveView()),
+			'files' => \count($files),
+			'output' => isset($this->options['out']) ? 'file' : 'stdout',
+		];
+
+		try {
+			$dir = \dirname($path);
+
+			if (!\is_dir($dir)) {
+				\mkdir($dir, 0775, true);
+			}
+
+			$json = \json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+			if ($json !== false) {
+				\file_put_contents($path, $json . "\n", FILE_APPEND | LOCK_EX);
+			}
+		} catch (\Throwable) {
+			// Logging must never break context generation. The dog ate the telemetry.
+		}
+	}
+
+	/**
+	 * Resolve usage log path.
+	 *
+	 * @return string Absolute log path, or empty string when logging is disabled.
+	 */
+	private function resolveUsageLogPath(): string {
+		if ($this->hasFlag('no-log')) {
+			return '';
+		}
+
+		$explicit = (string)($this->options['log'] ?? '');
+
+		if ($explicit !== '') {
+			return $this->normalizePath($explicit);
+		}
+
+		$env = (string)(\getenv('ASERNO_LLM_CONTEXT_USAGE_LOG') ?: '');
+
+		if ($env !== '') {
+			return $this->normalizePath($env);
+		}
+
+		return $this->normalizePath(self::USAGE_LOG_PATH);
+	}
+
+	/**
+	 * Build a compact selector log without source content.
+	 *
+	 * @return array<string,mixed> Selector metadata.
+	 */
+	private function buildUsageSelectorLog(): array {
+		$selectors = [];
+
+		foreach (['bundle', 'package', 'layer', 'service', 'route', 'command', 'class', 'max-files'] as $key) {
+			if (isset($this->options[$key])) {
+				$selectors[$key] = $this->options[$key];
+			}
+		}
+
+		if (isset($this->options['contains'])) {
+			$value = (string)$this->options['contains'];
+
+			$selectors['contains'] = [
+				'present' => true,
+				'length' => \strlen($value),
+				'sha1' => \sha1($value),
+			];
+		}
+
+		if ($this->hasFlag('with-registry')) {
+			$selectors['with-registry'] = true;
+		}
+
+		return $selectors;
+	}
+
+	/**
 	 * Print usage help.
 	 *
 	 * @return void
@@ -1713,6 +1861,8 @@ Target options:
   --with-registry                  Include Registry.php in the output.
   --max-files=80                   Limit number of files.
   --out=C:\path\context.md         Write output to file instead of STDOUT.
+  --log=C:\path\usage.jsonl        Override the default usage log path for this run.
+  --no-log                         Disable usage logging for this run.
 
 View options:
   --view=api                       Show namespace, imports, class shape, constants, properties, and method signatures.
